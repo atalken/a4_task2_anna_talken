@@ -5,7 +5,231 @@ date: "11/14/2020"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(here)
+library(janitor)
+library(lubridate)
+library(ggbeeswarm)
+library(kableExtra)
+library(effsize)
+library(broom)
 ```
+
+## Introduction
+
+** A few sentences explaining this project **
+
+## Data Analysis
+
+** A few sentences describing the data **
+
+The data used in this report is derived from the Bonanza Creek LTER which is part of the US Long Term Ecological Research Network. Here I am looking specifically at data on the juvenile snowshoe hares from 1998 to 2012. 
+
+Data citation: Kielland, K., F.S. Chapin, R.W. Ruess, and Bonanza Creek LTER. 2017. Snowshoe hare physical data in Bonanza Creek Experimental Forest: 1999-Present ver 22. Environmental Data Initiative. https://doi.org/10.6073/pasta/03dce4856d79b91557d8e6ce2cbcdc14
+
+
+## Exploratory Findings
+
+```{r, message = FALSE, warning = FALSE}
+snowshoe_hares <- read_csv(here("data", "bonanza_hares.csv")) #read in data
+```
+
+
+### 1. Annual juvenile hare trap counts
+
+```{r, message = FALSE, warning = FALSE, fig.cap= "Fig. 1: Total number of juvenile hare trappings recorded annually from 1998 to 2012"}
+juvenile_hare_count <- snowshoe_hares %>% 
+  clean_names() %>% 
+  filter(age == "j") %>% #filter to only include juvenile hares
+  mutate(date = mdy(date)) %>% # Converted date to class "date"
+  mutate(year_new = year(date)) %>% 
+  count("j", year_new, sort = TRUE)  # Use the count function to count juvenile hares by year and SORT to order by number
+ 
+
+ggplot(data = juvenile_hare_count, aes(x = year_new, y = n)) +
+  labs(x = "Year", y = "Number of Juvenile Hares") +
+  geom_line()+
+  geom_point()+
+  theme_minimal() +
+  scale_x_continuous ("Year", breaks = seq(1999, 2012, 1)) # format x axis to have all the years listed
+```
+
+```{r, message = FALSE, warning = FALSE}
+hare_summary <- juvenile_hare_count %>% 
+  summarize(mean_number = mean(n),
+            median_number = median(n),
+            min_number = min(n),
+            max_number = max(n),
+            n = n())
+#Create a summmary table with min, max, mean and median numbers
+
+# Descriptive stats
+
+hare_summary %>% 
+  kable(col.names = c("Mean", "Median", "Minimum", "Maximum", "Sample Size")) %>% 
+   kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+
+
+The minimum count of juvenile hare trappings is 2 which was recorded in 2012. The maximum count occurred in 1999 and was 126. 
+The mean number of juvenile hares trapped is 31.5 and the median number is 18.5.
+Moving forward, I would gather data on 'effort' (number of days and number of traps used) so that I could standardize the data by juvenile hares trapped per unit effort. For example, I would look at the number of hares caught and the number of traps used, and find the proportion of hares caught per traps used. This would help to standardize the data across years and give a more accurate portrayal of annual trends in juvenile hare trappings. 
+
+
+### 2. Visualize juvenile hare weights
+
+```{r, include = FALSE, message = FALSE, warning = FALSE, fig.cap= "Figure 2. Male and female juvenile hare weights recorded in each of the three sites: Bonbs, Bonmat and Bonrip"}
+juvenile_hares <- snowshoe_hares %>% 
+  filter(age == "j") %>% 
+  select(weight, sex, grid)  %>% #selecting to just see sex, site and weight of juvenile hares
+  group_by(grid)
+
+ggplot(data = juvenile_hares, aes(x=weight)) +
+  geom_histogram(aes(fill = sex), binwidth = 50, color = "midnightblue") +
+  facet_wrap(~grid) +
+  theme_minimal() + 
+  labs(x = "Weight (g)", y = "Number of hares") 
+```
+
+Creating a beeswarm box plot to display juvenile hare weight by sex and location.
+```{r, warnings = FALSE, messages = FALSE, fig.cap = "Figure 2. Male and female juvenile hare weights recorded in each of the three sites: Bonbs, Bonmat and Bonrip"}
+ggplot(data = juvenile_hares, aes(x = grid, y = weight)) +
+  geom_beeswarm(aes(color = sex)) +
+  facet_wrap(~sex) +
+scale_color_manual(values = c("goldenrod2","cyan4")) +
+  geom_boxplot(fill = NA, width = 0.2, outlier.color = NA) +
+  stat_summary(fun=mean, 
+               geom="point", 
+               shape=20, 
+               size=4, 
+               color="black", 
+               fill="black") +
+  theme_minimal() +
+  labs(x = "Site", 
+       y = "Weight (g)", 
+       title = "Weight of female vs. male juvenile hares in three different trapping sites")
+```
+Figure 2 illustrates the difference in juvenile hare mean weights across different sites and between female and male. Overall, males tend to have a higher average weight than female hares. 
+
+### 3. Juvenile weight comparisons (male and female snowshoe hares)
+
+```{r}
+# Creating a table containing mean, SD, sample size for male and female juvenile hares to compare weight
+
+weight_comparison <- juvenile_hares %>% 
+  group_by(sex) %>% 
+    summarize(
+    mean_weight = round(mean(weight, na.rm = TRUE),2),
+    sd_weight = round(sd(weight, na.rm = TRUE),2),
+    n = n())
+```
+
+```{r}
+weight_comparison %>% 
+  kable(col.names = c("Sex", "Mean", "SD", "Sample Size")) %>% 
+   kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+```{r}
+# T-test
+
+f_hares <- juvenile_hares %>% 
+  filter(sex == "f") %>% 
+  pull(weight)
+
+m_hares <- juvenile_hares %>% 
+  filter(sex == "m") %>% 
+  pull(weight)
+
+# Plot histograms & qq-plots to check assumptions
+hist(f_hares)
+qqnorm(f_hares)
+hist(m_hares)
+qqnorm(m_hares)
+
+# Overall: assumptions of normality hold, & sample size additionally >> Central Limit Theorem (means will be normally distributed). Two-sample t-test OK for means comparison! 
+
+
+# Run the t-test:
+hares_ttest <- t.test(f_hares, m_hares)
+
+# Get the tidy model results to call outputs in-line: 
+hares_ttest_tidy <- tidy(hares_ttest)
+
+# Get the means & SDs for each: 
+male_mean <- mean(m_hares)
+female_mean <- mean(f_hares, na.rm = TRUE)
+male_sd <- sd(m_hares)
+female_sd <- sd(f_hares)
+
+# Get the effect size: 
+hares_effsize <- cohen.d(m_hares, f_hares, na.rm = TRUE)
+```
+
+When comparing weights (g) between male and female juvenile hares, males have a higher average weight (`r round(male_mean,2)` $\pm$ `r round(male_sd, 2)` than female hares (`r round(female_mean,2)` $\pm$ `r round(female_sd, 2)`. The difference in means `r round(male_mean, 2) - round(female_mean, 2)` mm (a `r round((male_mean - female_mean)/((male_mean + female_mean)/2)*100, 2)`% difference), the difference in means was shown to be signifcant (Welch's two-sample t-test: t(`r round(hares_ttest_tidy$parameter,2)`) = `r round(hares_ttest_tidy$statistic,2)`, p < 0.001), and the effect size is large (Cohen's *d* = `r round(hares_effsize$estimate,2)`).
+
+
+### 4. Relationship between juvenile weight and hind foot length
+
+Here I am exploring the relationship between juvenile hare weight and hindfoot length. 
+
+```{r}
+hare_hind <- snowshoe_hares %>% 
+  filter(age == "j") %>% 
+  select(weight, hindft)
+
+ggplot(data = hare_hind, aes(x= weight, y = hindft)) +
+  geom_point(color = "cyan4") +
+  geom_smooth(method = "lm", se = FALSE, color = "gray30") +
+  ggpubr:: stat_regline_equation( label.x = 1250, label.y = 80) +
+  labs(x = "Weight",
+       y = "Hind foot") +
+  theme_minimal() 
+  
+```
+# Do linear regression
+penguin_lm <- lm(body_mass_g ~ flipper_length_mm, data = penguins)
+
+# Get tidy versions of the model output to call later on in text
+penguin_lm_tidy <- tidy(penguin_lm)
+penguin_lm_glance <- glance(penguin_lm)
+
+# See model diagnostics:
+# plot(penguin_lm)
+
+# Get Pearson's r correlation
+penguin_cor <- cor.test(penguins$body_mass_g, penguins$flipper_length_mm)
+
+# Tidy version of correlation output:
+penguin_cor_tidy <- tidy(penguin_cor)
+
+```{r, include = FALSE}
+# Do linear regression
+hare_hind_lm <- lm(weight ~ hindft, data = hare_hind)
+
+# Get tidy versions of the model output to call later on in text
+hare_hind_tidy <- tidy(hare_hind_lm)
+hare_hind_glance <- glance(hare_hind_lm)
+
+# See model diagnostics:
+plot(hare_hind_lm)
+
+# Get Pearson's r correlation
+hare_hind_cor <- cor.test(hare_hind$weight, hare_hind$hindft)
+
+# Tidy version of correlation output:
+hare_hind_cor_tidy <- tidy(hare_hind_cor)
+
+```
+
+The relationship between juvenile hare weight and hind foot length does not appear to be very linear. Simple linear regression revealed that hind foot lenght does NOT significantly predict hare weight (g) (p < 0.001, R^2^ = `r round(hare_hind_glance$r.squared,2)`) with an average slope of $\beta$ = `r round(hare_hind_tidy$estimate[2], 2)` g mm^-1^. Juvenile hare weight and hind foot length are not very strongly, positively correlated (Pearson's *r* = `r round(hare_hind_cor_tidy$estimate,2)`, p < 0.001). Diagnostic plots (not included) reveal a skewed distribution and heterodastic residuals. 
+
+
+## Summary
+
+## Citations
 
